@@ -97,7 +97,14 @@ public class JpegDecoder extends BinaryFileParser implements JpegUtils.Visitor {
             final int[] preds = new int[sofnSegment.numberOfComponents];
             ColorModel colorModel;
             WritableRaster raster;
-            if (sofnSegment.numberOfComponents == 3) {
+            if (sofnSegment.numberOfComponents == 4) {
+                // FIXME: add processing of proper color models
+                colorModel = new DirectColorModel(24, 0x00ff0000, 0x0000ff00,
+                        0x000000ff);
+                raster = Raster.createPackedRaster(DataBuffer.TYPE_INT,
+                        sofnSegment.width, sofnSegment.height, new int[] {
+                                0x00ff0000, 0x0000ff00, 0x000000ff }, null);
+            } else if (sofnSegment.numberOfComponents == 3) {
                 colorModel = new DirectColorModel(24, 0x00ff0000, 0x0000ff00,
                         0x000000ff);
                 raster = Raster.createPackedRaster(DataBuffer.TYPE_INT,
@@ -130,7 +137,26 @@ public class JpegDecoder extends BinaryFileParser implements JpegUtils.Visitor {
                     for (int y2 = 0; y2 < vSize && y1 + y2 < sofnSegment.height; y2++) {
                         for (int x2 = 0; x2 < hSize
                                 && x1 + x2 < sofnSegment.width; x2++) {
-                            if (scaledMCU.length == 3) {
+                            if (scaledMCU.length == 4) {
+                                final int C = scaledMCU[0].samples[srcRowOffset + x2];
+                                final int M = scaledMCU[1].samples[srcRowOffset + x2];
+                                final int Y = scaledMCU[2].samples[srcRowOffset + x2];
+                                final int K = scaledMCU[3].samples[srcRowOffset + x2];
+                                // Translate YCCK -> CMYK
+                                final int fakergb = YCbCrConverter.convertYCbCrToRGB(C, M, Y);
+                                final int C2 = (fakergb & 0xff0000) >> 16;
+                                final int M2 = (fakergb & 0x00ff00) >> 8;
+                                final int Y2 = fakergb & 0x0000ff;
+                                final double dc = (1 - C2 / 255.0);
+                                final double dm = (1 - M2 / 255.0);
+                                final double dy = (1 - Y2 / 255.0);
+                                final double dk = (K / 255.0);
+                                // Translate CMYK -> RGB
+                                final int rgb = ((int) (255 * dc * dk) << 16
+                                        | (int) (255 * dm * dk) << 8
+                                        | (int) (255 * dy * dk));
+                                dataBuffer.setElem(dstRowOffset + x2, rgb);
+                            } else if (scaledMCU.length == 3) {
                                 final int Y = scaledMCU[0].samples[srcRowOffset + x2];
                                 final int Cb = scaledMCU[1].samples[srcRowOffset + x2];
                                 final int Cr = scaledMCU[2].samples[srcRowOffset + x2];
